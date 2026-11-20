@@ -63,6 +63,9 @@ const SHIELD_TIME = 5;    // segundos de duración del escudo
 const SHIELD_R    = 26;   // radio del escudo
 const SHIELD_FADE = 1;    // último segundo: se desvanece
 const SHIELD_COLOR = '102,255,102';
+const SLOW_TIME   = 6;      // segundos de cámara lenta
+const SLOW_FACTOR = 0.5;    // fracción de velocidad de los asteroides
+const SLOW_COLOR  = '#c6f';
 
 class PowerUp {
   constructor(x, y, type = 'triple') {
@@ -89,7 +92,8 @@ class PowerUp {
     if (this.ttl < 2 && Math.floor(this.ttl * 8) % 2 === 0) return;
     ctx.save();
     ctx.translate(this.x, this.y);
-    ctx.strokeStyle = this.type === 'shield' ? '#6f6' : '#0ff';
+    ctx.strokeStyle = this.type === 'shield' ? '#6f6'
+                    : this.type === 'slow'   ? SLOW_COLOR : '#0ff';
     ctx.lineWidth   = 1.5;
     ctx.beginPath();
     ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
@@ -98,6 +102,12 @@ class PowerUp {
       // Icono: círculo interior (escudo)
       ctx.beginPath();
       ctx.arc(0, 0, 5, 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (this.type === 'slow') {
+      // Icono: reloj de arena
+      ctx.beginPath();
+      ctx.moveTo(-4, -5); ctx.lineTo(4, -5); ctx.lineTo(-4, 5); ctx.lineTo(4, 5);
+      ctx.closePath();
       ctx.stroke();
     } else {
       // Icono: tres líneas en abanico
@@ -178,6 +188,7 @@ class Ship {
   constructor() {
     this.tripleShot = 0;   // segundos restantes de disparo triple
     this.shield     = 0;   // segundos restantes de escudo
+    this.slowMo     = 0;   // segundos restantes de cámara lenta
     this.reset();
   }
 
@@ -200,6 +211,7 @@ class Ship {
     if (this.shootCooldown > 0) this.shootCooldown -= dt;
     if (this.tripleShot    > 0) this.tripleShot    -= dt;
     if (this.shield        > 0) this.shield        -= dt;
+    if (this.slowMo        > 0) this.slowMo        -= dt;
 
     const ROT   = 3.5;   // rad/s
     const THRUST = 260;  // px/s²
@@ -405,7 +417,7 @@ class Ring {
 
 // ── Estado del juego ──────────────────────────────────────────────────────────
 let ship, bullets, asteroids, particles;
-let powerUps, tripleTarget, shieldTarget, levelKills;   // cada power-up sale una vez por nivel
+let powerUps, tripleTarget, shieldTarget, slowTarget, levelKills;   // cada power-up sale una vez por nivel
 let score, lives, level;
 let state;      // 'playing' | 'dead' | 'gameover'
 let deadTimer;
@@ -433,6 +445,9 @@ function resetPowerUp(count) {
   do {
     shieldTarget = randInt(level === 1 ? 2 : 1, max);
   } while (shieldTarget === tripleTarget);
+  do {
+    slowTarget = randInt(level === 1 ? 3 : 1, max);
+  } while (slowTarget === tripleTarget || slowTarget === shieldTarget);
 }
 
 // Destruye un asteroide: puntos, explosión, división y posible power-up.
@@ -444,6 +459,7 @@ function destroyAsteroid(a, newAsteroids) {
   levelKills++;
   if (levelKills === tripleTarget) powerUps.push(new PowerUp(a.x, a.y, 'triple'));
   if (levelKills === shieldTarget) powerUps.push(new PowerUp(a.x, a.y, 'shield'));
+  if (levelKills === slowTarget)   powerUps.push(new PowerUp(a.x, a.y, 'slow'));
 }
 
 // Rompe el escudo como un cascarón de huevo: fragmentos + destello.
@@ -493,6 +509,7 @@ function killShip() {
   ship.dead = true;
   ship.tripleShot = 0;
   ship.shield = 0;
+  ship.slowMo = 0;
   lives--;
   if (lives <= 0) {
     state = 'gameover';
@@ -529,7 +546,9 @@ function update(dt) {
 
   ship.update(dt);
   bullets.forEach(b => b.update(dt));
-  asteroids.forEach(a => a.update(dt));
+  // Cámara lenta: mitad de velocidad salvo que la nave acelere
+  const asteroidDt = ship.slowMo > 0 && !ship.thrusting ? dt * SLOW_FACTOR : dt;
+  asteroids.forEach(a => a.update(asteroidDt));
   particles.forEach(p => p.update(dt));
   powerUps.forEach(p => p.update(dt));
 
@@ -553,8 +572,9 @@ function update(dt) {
   // Nave vs power-up
   for (const p of powerUps) {
     if (dist(ship, p) < ship.radius + p.radius) {
-      if (p.type === 'shield') ship.shield = SHIELD_TIME;
-      else                     ship.tripleShot = 10;
+      if (p.type === 'shield')    ship.shield = SHIELD_TIME;
+      else if (p.type === 'slow') ship.slowMo = SLOW_TIME;
+      else                        ship.tripleShot = 10;
       explode(p.x, p.y, 6);
       p.dead = true;
     }
@@ -626,6 +646,14 @@ function drawHUD() {
   if (ship.shield > 0) {
     ctx.fillStyle = '#6f6';
     ctx.fillText(`ESCUDO ${Math.ceil(ship.shield)}s`, 14, y);
+    y += 20;
+  }
+  if (ship.slowMo > 0) {
+    ctx.fillStyle = SLOW_COLOR;
+    // Atenuado mientras la nave acelera (efecto suspendido)
+    ctx.globalAlpha = ship.thrusting ? 0.4 : 1;
+    ctx.fillText(`LENTO ${Math.ceil(ship.slowMo)}s`, 14, y);
+    ctx.globalAlpha = 1;
   }
 }
 
