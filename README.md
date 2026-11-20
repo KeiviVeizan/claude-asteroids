@@ -49,3 +49,4 @@ Luego visita `http://localhost:3000`.
 - Asteroides se parten en fragmentos más pequeños al ser destruidos
 - Partículas de explosión al destruir asteroides
 - Bomba Nova: ítem escaso que se guarda y, al detonarla con `B`, destruye todos los asteroides en pantalla
+- Hiperpropulsión: durante 8 s la nave acelera y gira mucho más rápido y frena al instante para esquivar con precisión
